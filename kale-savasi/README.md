@@ -28,14 +28,37 @@ Prototip aşamasında. Oyun tarayıcıda çalışıyor ve test panelindeki sahte
 | Her 20 beğeni | Okçu |
 | 1–29 coin | Şövalye (her 10 coin'e +1, en fazla 5) |
 | 30–499 coin | Dev |
-| 500+ coin | Meteor: rakip birimleri siler, kaleye 1.500 hasar |
+| 500+ coin | Meteor: rakibin sahadaki tüm birimlerini siler, **kaleye hasar vermez** |
 
-- Kale canı 10.000. Biri sıfırlanınca 8 saniye sonra yeni tur başlar.
+- **Kale canı:** izleyici yokken 20.000. Tur başında aktif izleyici sayısına göre en fazla 3 katına (60.000) çıkar, kalabalık yayında turlar kısalmasın diye.
+- **Kale kuleleri:** her kale, kapısına 320 px'ten yakın düşmana saniyede bir ok atar. Kapıya yığılıp kaleyi hızla yıkmayı (kartopu etkisi) engeller.
+- **Kuşatma:** tur 4 dakikayı geçince kale hasarı her dakika %50 artar, kuleler yavaşlar. Turlar sonsuza uzamaz.
+- **Az kişili takıma destek:** son 2 dakikada aktif izleyici sayısı az olan takımın NPC'leri daha sık çıkar (en fazla 2 kat), izleyici birimleri daha güçlü olur (oranın karekökü kadar). Takım seçmemiş izleyicinin beğenileri az kişili takıma gider.
+- **Geride kalana destek:** kalesi rakipten %25'ten fazla geride olan takımın NPC'leri daha sık çıkar.
 - Takımlar coin topladıkça çağ atlar: Taş Devri → Orta Çağ (300) → Modern Çağ (1.200) → Fütüristik Çağ (3.000). Çağlar her turda sıfırlanır.
-- Kalesi rakipten %25'ten fazla geride kalan takımın NPC'leri daha sık çıkar.
 - İzleyici ilk yazdığı takıma kilitlenir.
 - Uygunsuz kullanıcı adları ekranda "izleyici" olarak görünür (`YASAK` listesi genişletilmeli).
 - Ses: kodla üretilen müzik ve birim sesleri. Sesli okuma (TTS) bilinçli olarak yok.
+
+Ayar değerleri `oyun/index.html` içinde `/* --- Denge ayarları --- */` bölümünde.
+
+## Denge testi
+
+Oyun adresine parametre eklenerek hızlandırılmış test yapılabilir:
+
+- `?hiz=30` oyunu 30 kat hızlı oynatır
+- `&bot=0.3` sahte izleyici yoğunluğu (0 = sadece NPC, 1 = çok hareketli yayın)
+- `&can=20000` temel kale canı
+
+Tarayıcı konsolunda `oyun.durum()` turların sürelerini ve kazananları verir.
+
+Son ölçüm (17 Kasım 2026, 30x hızla):
+
+| Senaryo | Ortanca tur süresi | Kazananlar |
+| --- | --- | --- |
+| Sadece NPC (4 deneme, 28 tur) | ~7 dk | Kırmızı 16 – Mavi 12 |
+| Az izleyici (bot=0.3) | ~4 dk | takım sayıları dengesizken de iki taraf kazanabiliyor |
+| Çok izleyici (bot=1) | ~3 dk | 8'e 7 takımda başa baş; 9'a 6 takımda büyük takım hafif önde |
 
 ## Dış olay arayüzü
 
@@ -53,7 +76,7 @@ oyun.olay({ tip: 'begeni', kullanici: 'can', adet: 15 })
 - [ ] Hediye adı → birim eşleme ayar dosyası, seri hediyelerin (`repeatEnd`) tek sayılması
 - [ ] Gerçek profil fotoğrafları
 - [ ] Kalıcı liderlik tablosu (SQLite), gece 00:00 ve Pazartesi sıfırlaması
-- [ ] Denge testi (hedef tur süresi 5–10 dk)
+- [x] Denge testi ve ayarı (kuleler, kuşatma, az kişili takım desteği)
 - [ ] OBS'te 3–4 saatlik dayanıklılık testi
 - [ ] Mancınık, Ejderha ve gerçek hediye listesine göre kademeler
 

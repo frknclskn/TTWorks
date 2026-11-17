@@ -106,7 +106,14 @@ oyun.olay({tip:'begeni', kullanici:'can', adet:15})</pre>
 </main>
 <script>
 {
-const W=1080,H=1920,MAXHP=10000;
+const W=1080,H=1920;
+/* --- Denge ayarları --- */
+const QS=new URLSearchParams(location.search);
+const BASEHP=+QS.get('can')||20000;     // kale canı (izleyici yokken); aktif izleyici arttıkça en fazla 3 katına çıkar
+const TOWER={rng:320,cd:1.0,dmg:9};      // kale kulesi: menzil, atış aralığı (sn), hasar
+const NPC_SPAWN=3;                        // NPC piyade aralığı (sn)
+const SIEGE_START=240,SIEGE_STEP=.5;     // 4. dakikadan sonra her dakika kale hasarı +%50, kuleler yavaşlar
+const ACTIVE_WINDOW=120;                  // "aktif izleyici" sayılmak için son etkileşim (sn)
 const cv=document.getElementById('game'),cx=cv.getContext('2d');
 const $=id=>document.getElementById(id);
 const AGES=[{n:'Taş Devri',dat:"Taş Devri'ne",stone:'#8f8170',m:1,need:0},{n:'Orta Çağ',dat:"Orta Çağ'a",stone:'#a3a7ae',m:1.35,need:300},{n:'Modern Çağ',dat:"Modern Çağ'a",stone:'#7c848f',m:1.8,need:1200},{n:'Fütüristik Çağ',dat:"Fütüristik Çağ'a",stone:'#56648a',m:2.4,need:3000}];
@@ -115,11 +122,15 @@ const TEAM={red:{c:'#e5383b',d:'#7d1416',name:'Kırmızı',cls:'r',dir:1,gate:54
             blue:{c:'#2f80ed',d:'#123a78',name:'Mavi',cls:'b',dir:-1,gate:1235,enemyGate:545,y0:1240}};
 const TYPES={piyade:{hp:40,dmg:6,spd:70,rng:38,cd:.8,r:17,castle:1},
   okcu:{hp:30,dmg:5,spd:60,rng:230,cd:1.1,r:17,castle:1,ranged:1},
-  sovalye:{hp:130,dmg:14,spd:120,rng:42,cd:.7,r:23,castle:2},
-  dev:{hp:450,dmg:28,spd:45,rng:62,cd:1.4,r:38,castle:5,splash:90}};
-const S={units:[],proj:[],parts:[],meteors:[],castle:{},pts:{},age:{},spawnT:{},likes:{},warn:{},shake:0,banner:null,round:0,over:0,lastHit:null};
-const userTeam=new Map(),lastFree=new Map(),day=new Map(),week=new Map();
+  sovalye:{hp:130,dmg:14,spd:120,rng:42,cd:.7,r:23,castle:1.5},
+  dev:{hp:450,dmg:28,spd:45,rng:62,cd:1.4,r:38,castle:3,splash:90}};
+const S={maxhp:BASEHP,tower:{red:0,blue:0},time:0,roundT:0,hist:[],siege:0,units:[],proj:[],parts:[],meteors:[],castle:{},pts:{},age:{},spawnT:{},likes:{},warn:{},shake:0,banner:null,round:0,over:0,lastHit:null};
+const lastSeen=new Map(),userTeam=new Map(),lastFree=new Map(),day=new Map(),week=new Map();
 const enemyOf=t=>t==='red'?'blue':'red';
+function seen(user,team){lastSeen.set(user,S.time);if(team&&!userTeam.has(user))userTeam.set(user,team)}
+function active(team){let n=0;for(const [u,t] of userTeam)if(t===team&&S.time-(lastSeen.get(u)??-1e9)<ACTIVE_WINDOW)n++;return n}
+function popBoost(team){const a=active(team),b=active(enemyOf(team));return a>=b?1:Math.min(3,(b+1)/(a+1))}
+const siegeMult=()=>1+Math.max(0,(S.roundT-SIEGE_START)/60)*SIEGE_STEP;
 const fmt=n=>Math.round(n).toLocaleString('tr-TR');
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const hash=s=>{let h=0;for(const c of s)h=(h*31+c.charCodeAt(0))|0;return Math.abs(h)};
@@ -178,7 +189,7 @@ function thud(){if(!AC||AC.currentTime-lastThud<.3)return;lastThud=AC.currentTim
 const MU={next:0,step:0,bar:0};
 const mf=m=>440*2**((m-69)/12);
 const PROG=[[45,[57,60,64]],[41,[53,57,60]],[48,[55,60,64]],[43,[55,59,62]]];
-function intensity(){if(S.over)return -1;const lo=Math.min(S.castle.red,S.castle.blue)/MAXHP;return lo<.2?2:(lo<.5||S.units.length>60)?1:0}
+function intensity(){if(S.over)return -1;const lo=Math.min(S.castle.red,S.castle.blue)/S.maxhp;return lo<.2?2:(lo<.5||S.units.length>60)?1:0}
 function note(t,f,d,type,v,cut){
   const o=AC.createOscillator(),g=AC.createGain();o.type=type;o.frequency.value=f;g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.0001,t+d);
   if(cut){const fl=AC.createBiquadFilter();fl.type='lowpass';fl.frequency.value=cut;o.connect(fl).connect(g)}else o.connect(g);
@@ -256,7 +267,7 @@ function banner(t,sub,col,life=3.2){S.banner={t,sub,col,life,max:life}}
 /* --- Oyun mantığı --- */
 function spawn(team,type,owner=null,label=null){
   if(type==='piyade'&&S.units.length>170)return;
-  const t=TYPES[type],m=AGES[S.age[team]].m;
+  const t=TYPES[type],m=AGES[S.age[team]].m*(owner?popBoost(team)**.5:1);
   S.units.push({team,type,t,owner,label:label||owner,x:390+Math.random()*300,y:TEAM[team].gate,hp:t.hp*m,max:t.hp*m,dmg:t.dmg*m,cd:0,anim:Math.random()*6,born:performance.now()});
 }
 function burst(x,y,col,n=8,sp=260,g=500){
@@ -266,7 +277,7 @@ function hit(e,d,owner){if(e.hp<=0)return;e.hp-=d;addScore(owner,0,Math.min(d,e.
 function damageCastle(team,amt,owner,x,y){
   if(S.over)return;
   S.castle[team]=Math.max(0,S.castle[team]-amt);addScore(owner,0,amt);S.lastHit=owner;thud();
-  const pc=S.castle[team]/MAXHP,th=pc<=.1?.1:pc<=.25?.25:pc<=.5?.5:1;
+  const pc=S.castle[team]/S.maxhp,th=pc<=.1?.1:pc<=.25?.25:pc<=.5?.5:1;
   if(pc>0&&th<S.warn[team]){S.warn[team]=th;alarm();showTip(`${TEAM[team].name} kale ${th===.5?'yarıya indi!':th===.25?'%25 canla direniyor!':'%10! Son şans!'}`,TEAM[team].c)}
   if(Math.random()<.35)burst(x,y,AGES[S.age[team]].stone,3,180);
   if(S.castle[team]<=0)endRound(enemyOf(team),owner);
@@ -292,27 +303,27 @@ function ultimate(team,user){
 function impact(m){
   const enemy=enemyOf(m.team);let n=0;
   for(const e of S.units)if(e.team===enemy&&e.hp>0){n++;hit(e,e.hp+1,m.user)}
-  damageCastle(enemy,1500,m.user,540,TEAM[m.team].enemyGate);
   S.shake=.9;burst(m.tx,m.ty,'#ff8a1f',60,700,300);burst(m.tx,m.ty,'#ffd34d',40,500,300);
-  banner(`${m.user} METEOR yağdırdı!`,`${n} düşman birimi silindi · kaleye 1.500 hasar`,'#ffb020',3.6);
+  banner(`${m.user} METEOR yağdırdı!`,`${n} düşman birimi silindi`,'#ffb020',3.6);
   boom();
 }
 function endRound(w,owner){
-  S.over=8;if(owner)addScore(owner,0,0,1);
+  S.over=8;S.hist.push({raund:S.round,sure:Math.round(S.roundT),kazanan:w});if(S.hist.length>50)S.hist.shift();if(owner)addScore(owner,0,0,1);
   banner(`${TEAM[w].name.toLocaleUpperCase('tr-TR')} KAZANDI!`,owner?`Son vuruş: ${owner} (+500 puan)`:'Son vuruş: NPC asker',TEAM[w].c,7);
   log(`<b>Raund ${S.round}</b>: ${tn(w)} kazandı${owner?`, son vuruş <span class="g">${esc(owner)}</span>`:''}`);
   for(let i=0;i<140;i++)S.parts.push({x:Math.random()*W,y:-20-Math.random()*300,vx:(Math.random()-.5)*120,vy:150+Math.random()*250,g:60,col:['#ffd34d',TEAM[w].c,'#fff'][i%3],life:4,max:4,s:8+Math.random()*8});
   [523,659,784,1046].forEach((f,i)=>setTimeout(()=>sfx(f,.25,'triangle',.08),i*150));
 }
 function resetRound(){
-  for(const t of ['red','blue']){S.castle[t]=MAXHP;S.pts[t]=0;S.age[t]=0;S.spawnT[t]=Math.random();S.likes[t]=0;S.warn[t]=1}
-  S.units=[];S.proj=[];S.meteors=[];S.over=0;S.lastHit=null;S.round++;
+  S.maxhp=Math.round(BASEHP*(1+Math.min(2,(active('red')+active('blue'))/8))/1000)*1000;
+  for(const t of ['red','blue']){S.tower[t]=0;S.castle[t]=S.maxhp;S.pts[t]=0;S.age[t]=0;S.spawnT[t]=Math.random();S.likes[t]=0;S.warn[t]=1}
+  S.units=[];S.proj=[];S.meteors=[];S.over=0;S.lastHit=null;S.round++;S.roundT=0;S.siege=0;
   if(S.round>1){banner(`Raund ${S.round}`,'Kaleler yenilendi, çağlar sıfırlandı','#fff',2.5);warHorn();log(`<b>Raund ${S.round}</b> başladı`)}
 }
 
 /* --- İzleyici olayları (arka uç bunları çağıracak) --- */
 function gift(user,team,coins){
-  if(S.over)return;user=safeName(user);
+  if(S.over)return;user=safeName(user);seen(user,team);
   S.pts[team]+=coins;addScore(user,coins);
   if(coins>=500){ultimate(team,user);log(`<span class="g">${esc(user)}</span> ${tn(team)} için ${coins} coin attı: <b>Meteor</b>`)}
   else if(coins>=30){spawn(team,'dev',user);giantSound();log(`<span class="g">${esc(user)}</span> ${tn(team)} için ${coins} coin: <b>Dev</b>`)}
@@ -325,16 +336,17 @@ function chat(user,text){
   let team=m==='1'?'red':'blue';
   if(userTeam.has(user)){if(userTeam.get(user)!==team)log(`${esc(user)} ${tn(userTeam.get(user))} takımına kilitli`);team=userTeam.get(user)}
   else{userTeam.set(user,team);log(`${esc(user)} ${tn(team)} takımına katıldı`)}
-  const now=performance.now();if(now-(lastFree.get(user)||-1e9)<5000)return;
+  seen(user,team);
+  const now=S.time;if(now-(lastFree.get(user)??-1e9)<5)return;
   lastFree.set(user,now);spawn(team,'okcu',user);bowSound();
 }
 function like(user,count){
   if(S.over)return;user=safeName(user);
-  let team=userTeam.get(user);if(!team){team=Math.random()<.5?'red':'blue'}
+  let team=userTeam.get(user);if(!team)team=active('red')<=active('blue')?'red':'blue';seen(user,null);
   S.likes[team]+=count;
   while(S.likes[team]>=20){S.likes[team]-=20;spawn(team,'okcu',null,'Beğeni');bowSound()}
 }
-window.oyun={olay(e){if(!e)return;if(e.tip==='hediye')gift(e.kullanici,e.takim,+e.coin||1);else if(e.tip==='sohbet')chat(e.kullanici,e.metin);else if(e.tip==='begeni')like(e.kullanici,+e.adet||1)}};
+window.oyun={durum:()=>({raund:S.round,sure:Math.round(S.roundT),kale:{...S.castle},birim:S.units.length,kusatma:S.siege,takim:[...userTeam.values()].reduce((o,t)=>(o[t]=(o[t]||0)+1,o),{}),gecmis:S.hist}),olay(e){if(!e)return;if(e.tip==='hediye')gift(e.kullanici,e.takim,+e.coin||1);else if(e.tip==='sohbet')chat(e.kullanici,e.metin);else if(e.tip==='begeni')like(e.kullanici,+e.adet||1)}};
 
 /* --- Sahte izleyiciler --- */
 const BOTS=['ayse_k','mehmet06','zeynep.tr','kral_ali','elifcan','burak_42','denizz','emre.gg','selin_x','oguzhan','canan77','mertcan','ipek.s','tolga35','nazli'];
@@ -352,6 +364,7 @@ function botEvent(){
 const clouds=[{x:120,y:70,s:1},{x:640,y:120,s:1.3},{x:930,y:40,s:.8}];
 const pebbles=Array.from({length:60},(_,i)=>({x:340+((i*97)%400),y:560+((i*263)%680),r:3+(i%4)}));
 function update(dt){
+  S.time+=dt;
   for(const c of clouds){c.x+=10*c.s*dt;if(c.x>W+160)c.x=-160}
   for(const p of S.parts){p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=p.g*dt;p.life-=dt}
   S.parts=S.parts.filter(p=>p.life>0);
@@ -359,11 +372,20 @@ function update(dt){
   if(S.tip){S.tip.life-=dt;if(S.tip.life<=0)S.tip=null}
   S.shake=Math.max(0,S.shake-dt);
   if(S.over){const pv=S.over;S.over-=dt;for(const k of [3,2,1])if(pv>k&&S.over<=k)tick(k===1?1320:880);if(S.over<=0)resetRound();return}
+  S.roundT+=dt;
   if($('tips').checked){TP.t-=dt;if(TP.t<=0){TP.t=14+Math.random()*8;showTip(nextTip())}}
-  if($('bots').checked){botT-=dt;if(botT<=0){botT=.45+Math.random()*.9;botEvent()}}
+  if($('bots').checked&&BOT>0){botT-=dt;if(botT<=0){botT=(.45+Math.random()*.9)/BOT;botEvent()}}
   for(const team of ['red','blue']){
-    const behind=S.castle[team]<S.castle[enemyOf(team)]-MAXHP*.25;
-    S.spawnT[team]-=dt;if(S.spawnT[team]<=0){S.spawnT[team]=behind?1.8:3;spawn(team,'piyade')}
+    const behind=S.castle[team]<S.castle[enemyOf(team)]-S.maxhp*.25;
+    S.spawnT[team]-=dt;if(S.spawnT[team]<=0){S.spawnT[team]=NPC_SPAWN*(behind?.6:1)/Math.min(2,popBoost(team));spawn(team,'piyade')}
+  }
+  if(S.roundT>=SIEGE_START&&!S.siege){S.siege=1;horn();showTip('Kuşatma başladı! Kaleler her dakika daha çok hasar alıyor','#ff9f43')}
+  for(const team of ['red','blue']){
+    S.tower[team]-=dt;if(S.tower[team]>0)continue;
+    const tm=TEAM[team];let tg=null,best=TOWER.rng;
+    for(const e of S.units){if(e.team===team||e.hp<=0)continue;const d=Math.abs(e.y-tm.gate);if(d<best){best=d;tg=e}}
+    if(!tg)continue;S.tower[team]=TOWER.cd*siegeMult();
+    const tx=tg.x<540?280:800;S.proj.push({x:tx,y:tm.gate-tm.dir*40,tg,dmg:TOWER.dmg*AGES[S.age[team]].m,owner:null,a:0});
   }
   for(const u of S.units){
     if(u.hp<=0)continue;
@@ -371,7 +393,7 @@ function update(dt){
     let tg=null,best=1e9;
     for(const e of S.units){if(e.team===u.team||e.hp<=0)continue;const dy=(e.y-u.y)*tm.dir;if(dy>-20&&dy<best){best=dy;tg=e}}
     if(tg&&best<=t.rng+tg.t.r){if(u.cd<=0){u.cd=t.cd;attack(u,tg)}}
-    else if((tm.enemyGate-u.y)*tm.dir<=t.rng){if(u.cd<=0){u.cd=t.cd;damageCastle(enemyOf(u.team),u.dmg*t.castle,u.owner,u.x,tm.enemyGate)}}
+    else if((tm.enemyGate-u.y)*tm.dir<=t.rng){if(u.cd<=0){u.cd=t.cd;damageCastle(enemyOf(u.team),u.dmg*t.castle*siegeMult(),u.owner,u.x,tm.enemyGate)}}
     else{u.y+=tm.dir*t.spd*dt;u.anim+=dt}
   }
   for(const p of S.proj){
@@ -407,13 +429,13 @@ function castle(team){
     cx.fillStyle='#5a4632';cx.fillRect(tx+48,y0-60,5,40);cx.fillStyle=tm.c;cx.beginPath();cx.moveTo(tx+53,y0-60);cx.lineTo(tx+100,y0-48);cx.lineTo(tx+53,y0-36);cx.fill()}
   stoneBlock(330,y0+20,420,h-20,st);crenels(334,y0+20,420,st);
   cx.restore();
-  const hp=S.castle[team]/MAXHP,by=y0+44;
+  const hp=S.castle[team]/S.maxhp,by=y0+44;
   cx.fillStyle='rgba(10,8,20,.75)';cx.beginPath();cx.roundRect(350,by,380,34,17);cx.fill();
   cx.fillStyle=tm.c;cx.beginPath();cx.roundRect(354,by+4,372*hp,26,13);cx.fill();
-  label(`${fmt(S.castle[team])} / ${fmt(MAXHP)}`,540,by+18,25);
+  label(`${fmt(S.castle[team])} / ${fmt(S.maxhp)}`,540,by+18,25);
   label(`${tm.name} kale · ${a.n}`,540,by+64,32,'#fff');
   label('1+ coin Şövalye · 30+ Dev · 500+ Meteor',540,by+102,23,'#ffe08a');
-  const behind=S.castle[team]<S.castle[enemyOf(team)]-MAXHP*.25;
+  const behind=S.castle[team]<S.castle[enemyOf(team)]-S.maxhp*.25;
   if(behind&&!S.over)label('Direniş: NPC daha sık çıkıyor',540,by+136,25,'#9ff0b0');
 }
 function weapon(x,y,ag,u){
@@ -521,7 +543,7 @@ document.querySelectorAll('[data-t]').forEach(b=>b.addEventListener('click',()=>
 function uname(){return $('uname').value.trim().slice(0,24)||'test_izleyici'}
 function act(team,a){initAudio();if(a==='chat')chat(uname(),team==='red'?'1':'2');else gift(uname(),team,+a)}
 $('likeBtn').addEventListener('click',()=>{initAudio();like(uname(),10)});
-$('endBtn').addEventListener('click',()=>{if(!S.over){const t=S.castle.red<=S.castle.blue?'red':'blue';damageCastle(t,MAXHP,uname(),540,TEAM[t].y0)}});
+$('endBtn').addEventListener('click',()=>{if(!S.over){const t=S.castle.red<=S.castle.blue?'red':'blue';damageCastle(t,S.maxhp,uname(),540,TEAM[t].y0)}});
 $('dayBtn').addEventListener('click',()=>{day.clear();log('Günlük tablo sıfırlandı (haftalık duruyor)')});
 const KEYS={q:['red','chat'],w:['red','1'],e:['red','30'],r:['red','500'],a:['blue','chat'],s:['blue','1'],d:['blue','30'],f:['blue','500']};
 addEventListener('keydown',e=>{if(e.target.tagName==='INPUT'||e.repeat)return;const k=e.key.toLocaleLowerCase('tr-TR');
@@ -530,9 +552,10 @@ cv.addEventListener('pointerdown',initAudio);
 $('audioBtn').addEventListener('click',initAudio);
 resetRound();
 let last=performance.now(),uiT=0;
+const Q=new URLSearchParams(location.search),HIZ=Math.max(1,Math.min(60,+Q.get('hiz')||1)),BOT=Math.max(0,+(Q.get('bot')??1));
 function loop(now){
   const dt=Math.min(.05,(now-last)/1000);last=now;
-  update(dt);draw();
+  for(let i=0;i<HIZ;i++)update(dt);draw();
   uiT-=dt;if(uiT<=0){uiT=.25;$('sRound').textContent=S.round;$('sUnits').textContent=S.units.length;$('sCache').textContent=AV.size}
   requestAnimationFrame(loop);
 }
