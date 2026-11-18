@@ -1,0 +1,16 @@
+{
+  "name": "enflasyon-canavari",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "TikTok canlı yayın ortak boss oyunu: Enflasyon Canavarı",
+  "scripts": {
+    "start": "node sunucu.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "tiktok-live-connector": "^2.4.4"
+  }
+}
