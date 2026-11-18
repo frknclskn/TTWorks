@@ -8,7 +8,22 @@ Prototip aşamasında. Oyun tarayıcıda çalışıyor ve test panelindeki sahte
 
 ## Çalıştırma
 
-`oyun/index.html` dosyasını Chrome'da açın. Sağdaki test panelinden ya da klavyeden olay gönderebilirsiniz:
+**Gerekli:** [Node.js](https://nodejs.org) 18 veya üstü (LTS sürümü).
+
+1. Windows'ta `baslat.bat` dosyasına çift tıklayın. İlk seferde paketleri kurar, sonra sunucuyu başlatıp yönetim panelini açar.
+   (Diğer sistemlerde: `npm install`, sonra `npm start`.)
+2. Tarayıcıda açılan **http://localhost:8080** yönetim paneli. "TikTok bağlantısı" kutusuna yayıncının kullanıcı adını yazıp **Bağlan**'a basın.
+3. OBS'e **Tarayıcı Kaynağı** ekleyin: adres `http://localhost:8080/?yayin`, genişlik 1080, yükseklik 1920. Bu görünümde panel yok, sadece oyun var.
+
+Paneldeki test butonları da sunucu üzerinden gider, yani OBS'teki oyunda da görünür. Sahte izleyiciler sunucu modunda varsayılan olarak kapalıdır.
+
+Euler API anahtarı isteğe bağlıdır ama önerilir (ücretsiz, [eulerstream.com](https://www.eulerstream.com)); anahtarsız bağlantı sık sınırlanır. Panelden girilebilir ya da `EULER_KEY` ortam değişkeniyle verilebilir.
+
+Veritabanı yok: puanlar ve liderlik tablosu sayfa açık kaldıkça bellekte durur, sayfa ya da sunucu kapanınca silinir.
+
+`oyun/index.html` doğrudan dosya olarak da açılabilir; o zaman TikTok bağlantısı olmadan, sadece test paneli ve sahte izleyicilerle çalışır.
+
+### Klavye kısayolları (panelde)
 
 | Tuş | Olay |
 | --- | --- |
@@ -60,29 +75,42 @@ Son ölçüm (17 Kasım 2026, 30x hızla):
 | Az izleyici (bot=0.3) | ~4 dk | takım sayıları dengesizken de iki taraf kazanabiliyor |
 | Çok izleyici (bot=1) | ~3 dk | 8'e 7 takımda başa baş; 9'a 6 takımda büyük takım hafif önde |
 
-## Dış olay arayüzü
+## Mimari
 
-Arka uç (TikTok dinleyici) her olayı sayfaya şu fonksiyonla iletecek:
+```
+TikTok canlı yayın
+   ↓  tiktok-live-connector (+ Euler imza servisi)
+sunucu.mjs  — tek dosya, http://localhost:8080
+   ↓  Server-Sent Events (/olaylar)
+oyun/index.html — panel (/) ve OBS görünümü (/?yayin)
+```
+
+Sunucu uç noktaları: `GET /` oyun, `GET /olaylar` olay akışı, `POST /baglan {kullanici, anahtar}`, `POST /kes`, `POST /olay` (test olayı ya da komut; tüm açık sayfalara iletilir). Sunucu yalnızca bu bilgisayardan (127.0.0.1) erişilebilir.
+
+Olay biçimi:
 
 ```js
-oyun.olay({ tip: 'hediye', kullanici: 'ayse', takim: 'red', coin: 1 })
+oyun.olay({ tip: 'hediye', kullanici: 'ayse', hediye: 'Rose', coin: 1, foto: 'https://…' })
 oyun.olay({ tip: 'sohbet', kullanici: 'ali', metin: '2' })
 oyun.olay({ tip: 'begeni', kullanici: 'can', adet: 15 })
+oyun.olay({ tip: 'komut', ad: 'turu-bitir' })   // ya da 'gunu-sifirla'
 ```
+
+Hediyenin takımı: izleyicinin kilitli takımı → yoksa hediye adı (`GIFT_TEAM`: Rose → Kırmızı, TikTok → Mavi) → yoksa az kişili takım. Seri hediyeler (`repeatEnd`) bitince bir kez, toplam adetle sayılır.
 
 ## Yol haritası
 
-- [ ] Node.js köprü programı (TikTok-Live-Connector → yerel WebSocket → oyun)
-- [ ] Hediye adı → birim eşleme ayar dosyası, seri hediyelerin (`repeatEnd`) tek sayılması
-- [ ] Gerçek profil fotoğrafları
-- [ ] Kalıcı liderlik tablosu (SQLite), gece 00:00 ve Pazartesi sıfırlaması
+- [x] Node.js köprü sunucusu (`sunucu.mjs`) ve tek sayfadan yönetim
+- [ ] Gerçek bir yayında test: hediye verisindeki alan adlarını doğrula (sunucu ilk hediyeyi konsola yazar)
+- [x] Seri hediyelerin (`repeatEnd`) tek sayılması
+- [x] Gerçek profil fotoğrafları (gelen adresten yüklenir, yoksa baş harfler)
 - [x] Denge testi ve ayarı (kuleler, kuşatma, az kişili takım desteği)
 - [ ] OBS'te 3–4 saatlik dayanıklılık testi
 - [ ] Mancınık, Ejderha ve gerçek hediye listesine göre kademeler
 
 ## Yayın kurulumu (plan)
 
-Oyun OBS'e Tarayıcı Kaynağı olarak (1080×1920) eklenir, OBS Sanal Kamera ile TikTok LIVE Studio'ya "Kamera" kaynağı olarak verilir. LIVE için hesapta en az 1.000 takipçi ve 18 yaş gerekir.
+Oyun OBS'e `http://localhost:8080/?yayin` adresiyle Tarayıcı Kaynağı olarak (1080×1920) eklenir, OBS Sanal Kamera ile TikTok LIVE Studio'ya "Kamera" kaynağı olarak verilir. LIVE için hesapta en az 1.000 takipçi ve 18 yaş gerekir.
 
 ## Belgeler
 

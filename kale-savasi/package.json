@@ -1,0 +1,16 @@
+{
+  "name": "kale-savasi",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "TikTok canlı yayın kale savaşı oyunu ve köprü sunucusu",
+  "scripts": {
+    "start": "node sunucu.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "tiktok-live-connector": "^2.4.4"
+  }
+}

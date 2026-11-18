@@ -17,16 +17,19 @@ TikTok canlı yayınında oynanan, izleyicilerin sohbet/beğeni/hediyeyle yönet
 
 ## Mimari
 
-- `oyun/index.html`: tek dosya, saf HTML/JS + Canvas. Dış olay girişi: `window.oyun.olay({tip, kullanici, takim, coin|metin|adet})`. Test/denge için `oyun.durum()` ve `?hiz=&bot=&can=` URL parametreleri.
-- Planlanan köprü: Node.js + TikTok-Live-Connector (zerodytrash) → yerel WebSocket → oyun sayfası. Oyun sayfası OBS'te yerel dosya ya da `localhost` adresi olarak açılacak (claude.ai artifact sayfası dış bağlantıya izin vermiyor).
-- Yayın: OBS Tarayıcı Kaynağı → OBS Sanal Kamera → TikTok LIVE Studio'da "Kamera" kaynağı (LIVE Studio'nun kendi Link kaynağı Canvas animasyonlarında takılabiliyor).
+- Kullanıcı **sade bir yapı** istiyor: tek küçük Node sunucusu, her şey tek web sayfasından yönetilsin, **veritabanı yok** (veriler oturum boyunca bellekte, sonra silinir). Büyük arka uç kodu ekleme.
+- `sunucu.mjs`: tek dosya, tek bağımlılık (`tiktok-live-connector`). Oyunu sunar, TikTok'a bağlanır, olayları Server-Sent Events ile sayfalara iletir; ws paketi kullanılmıyor. 127.0.0.1'e bağlanır.
+- `oyun/index.html`: tek dosya, saf HTML/JS + Canvas. `/` = yönetim paneli + oyun, `/?yayin` = OBS görünümü (panelsiz). Sunucudan açılınca panel butonları `POST /olay` ile sunucudan geçer ki OBS sayfası da görsün. Dosya olarak açılınca tek başına çalışır.
+- Test/denge için `oyun.durum()` ve `?hiz=&bot=&can=` URL parametreleri.
+- Yayın: OBS Tarayıcı Kaynağı → OBS Sanal Kamera → TikTok LIVE Studio'da "Kamera" kaynağı.
+- Gerçek TikTok kütüphanesiyle henüz test edilmedi (geliştirme ortamında ağ kapalıydı); sahte bir kütüphaneyle uçtan uca test edildi. Hediye alanları (`giftDetails.diamondCount` vb.) ilk gerçek yayında sunucu konsoluna yazılan veriyle doğrulanmalı.
 
 ## Sıradaki işler
 
-1. Node.js köprü programı + hediye eşleme ayar dosyası (`repeatEnd` ile seri hediyeleri tek say).
-2. Gerçek profil fotoğrafları.
-3. Kalıcı liderlik tablosu (SQLite), 00:00 ve Pazartesi sıfırlaması.
-4. Bilinen küçük görsel sorun: kırmızı kale kapısına dayanan birimlerin profil fotoğrafı kale yazılarının üstüne binebiliyor.
+1. Gerçek bir yayına bağlanıp hediye/kullanıcı alanlarını doğrula, gerekirse `sunucu.mjs` içindeki `kisi()` ve hediye bölümünü düzelt.
+2. Hediye adı → birim eşlemesi (şimdilik coin değerine göre; `GIFT_TEAM` sadece takım için).
+3. Bilinen küçük görsel sorun: kırmızı kale kapısına dayanan birimlerin profil fotoğrafı kale yazılarının üstüne binebiliyor.
+4. Profil fotoğrafı moderasyonu: uygunsuz fotoğrafları kapatma seçeneği.
 
 ## Denge değişikliği yaparken
 
